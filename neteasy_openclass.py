@@ -10,9 +10,9 @@ import time
 import urllib.parse as up
 import urllib.request as ur
 from threading import Thread
-
+import pymysql as sql
 ABSPATH=os.path.abspath(sys.argv[0])
-ABSPATH=os.path.dirname(ABSPATH)+"/"
+ABSPATH=os.path.dirname(ABSPATH)
 
 proxy = [
     {'http':'118.190.95.3:9001'},
@@ -145,7 +145,7 @@ def getVideoDownUrl(url):
         os.remove(bufferfile)
     
     if len(videoDownUrl)>0 and len(videotitle)>0:
-        rdata =videotitle[0]+','+videoDownUrl[0].replace('mp4','flv').replace('m3u8','flv').replace('-list','')
+        rdata =videotitle[0]+'***'+videoDownUrl[0].replace('mp4','flv').replace('m3u8','flv').replace('-list','')
         with open(os.path.join(ABSPATH,'video_down_url.txt'),'a+',encoding='utf-8') as f:
             f.write((rdata+'\n'))
     else:
@@ -204,14 +204,21 @@ def getVideo(title,url):
     }    
 
     proxyHandler = ur.ProxyHandler(random.choice(proxy))
-    opener = ur.build_opener(property)
+    opener = ur.build_opener()
     req = ur.Request(url,headers = headers)
     response = opener.open(req)
-    if not os.path.exists('video'):
-        os.mkdir('video')
-        
+    if not os.path.exists(os.path.join(ABSPATH,'video')):
+        os.mkdir(os.path.join(ABSPATH,'video'))
+      
+    
     with open (os.path.join(ABSPATH,'video','%s.flv'%title),'wb') as f:
         f.write(response.read())
+
+        db = sql.connect(host='127.0.0.1', user='root', password='zjbaaa', database='neteasy',autocommit=True)
+        cur = db.cursor() 
+        cur.execute('insert into video (`title`,`url`) values(%s,%s)',[title,url])
+        cur.close()
+        db.close()
 
 
 def getAllVideo():
@@ -221,15 +228,19 @@ def getAllVideo():
     videoDownUrl = list(map(lambda x: x.replace('\n',''),videoDownUrl))
     q = queue.Queue()
     threads = []
-    num = 20
+    num = 1
     x = 0
+    db = sql.connect(host='127.0.0.1', user='root', password='zjbaaa', database='neteasy',autocommit=True)
+    cur = db.cursor()
+    
     for url in videoDownUrl:
-        if 'None' not in url:
+        if 'None' not in url and '***' in url:
             q.put(url)
 
     for i in range(0,num):
-        title,url = q.get().split(',')
-        threads.append(Thread(target=getVideo,args=(title,url)))
+        title,url = q.get().split('***')
+        if not cur.execute('select * from video where url = %s',[url]):
+            threads.append(Thread(target=getVideo,args=(title,url)))
     for i in range(0,num):
         threads[i].start() 
 
@@ -238,12 +249,12 @@ def getAllVideo():
             if not threads[i].isAlive():
                 x+=1
                 print('\r %s 个已下载'%(x),end='')
-                title,url = q.get().split(',')
-                if url is not None:
-                    title,url = q.get().split(',')
-                    threads[i] = Thread(Thread(target=getVideo,args=(title,url)))
+                title,url = q.get().split('***')
+                if url is not None and not cur.execute('select * from video where url = %s',[url]):
+                    threads[i] = Thread(target=getVideo,args=(title,url))
                     threads[i].start()
+                    
     print('done')
 
-
-getAllVideoDownUrl()
+#getAllVideoDownUrl()
+getAllVideo()
